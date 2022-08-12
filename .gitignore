@@ -1,4 +1,5 @@
 target/
+database/
 
 ### IntelliJ IDEA ###
 .idea/
