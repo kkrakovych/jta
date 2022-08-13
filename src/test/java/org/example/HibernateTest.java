@@ -22,6 +22,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import javax.persistence.EntityManager;
 import javax.persistence.EntityManagerFactory;
 import javax.persistence.EntityTransaction;
+import javax.persistence.FlushModeType;
 import java.util.List;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -77,6 +78,7 @@ class HibernateTest {
             @Override
             public void run() {
                 Session session = sessionFactory.openSession();
+                session.setFlushMode(FlushModeType.COMMIT);
                 Transaction tx = session.beginTransaction();
 
                 Query<Item> q = session.createNamedQuery("Item.findByName");
@@ -149,6 +151,7 @@ class HibernateTest {
         Awaitility.await().pollDelay(500, TimeUnit.MILLISECONDS).untilAsserted(() -> Assertions.assertTrue(true));
 
         EntityManager entityManager = entityManagerFactory.createEntityManager();
+        entityManager.setFlushMode(FlushModeType.COMMIT);
         EntityTransaction et = entityManager.getTransaction();
         et.begin();
 
