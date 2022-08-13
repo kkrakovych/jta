@@ -7,6 +7,7 @@ import org.hibernate.Query;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
 import org.hibernate.Transaction;
+import org.hibernate.jpa.QueryHints;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,6 +19,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
+import javax.persistence.EntityManager;
+import javax.persistence.EntityManagerFactory;
+import javax.persistence.EntityTransaction;
 import java.util.List;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -30,10 +34,13 @@ class HibernateTest {
     private static final Logger logger = LoggerFactory.getLogger(HibernateTest.class);
 
     @Autowired
+    private ItemRepository itemRepository;
+
+    @Autowired
     private SessionFactory sessionFactory;
 
     @Autowired
-    private ItemRepository itemRepository;
+    private EntityManagerFactory entityManagerFactory;
 
     @BeforeEach
     void setUp() {
@@ -46,16 +53,25 @@ class HibernateTest {
         Assertions.assertTrue(sessionFactory.getSessionFactoryOptions().isQueryCacheEnabled());
     }
 
-    private static Stream<Arguments> testMobileViewIssueOriginalParameters() {
+    private static Stream<Arguments> testMobileViewIssueParameters() {
         return Stream.of(
-                Arguments.of(false),
-                Arguments.of(true)
+                Arguments.of(Boolean.FALSE),
+                Arguments.of(Boolean.TRUE)
         );
     }
 
+    private boolean isCacheable(Query<Item> q) {
+        return q.isCacheable();
+    }
+
+    private boolean isCacheable(javax.persistence.Query q) {
+        org.hibernate.Query<Item> hq = q.unwrap(org.hibernate.Query.class);
+        return hq.isCacheable();
+    }
+
     @ParameterizedTest
-    @MethodSource("testMobileViewIssueOriginalParameters")
-    void testMobileViewIssueOriginal(boolean mainQueryCacheable) {
+    @MethodSource("testMobileViewIssueParameters")
+    void testMobileViewIssue_SessionFactory(boolean mainQueryCacheable) {
         Timer timer = new Timer();
         timer.schedule(new TimerTask() {
             @Override
@@ -67,7 +83,7 @@ class HibernateTest {
                 q.setParameter("name", "MobileView Issue");
                 q.setCacheable(true);
                 List<Item> actual = q.getResultList();
-                logger.debug("Search {}", actual);
+                logger.debug("Search {}, isCacheable={}", actual, isCacheable(q));
                 Assertions.assertNotNull(actual);
                 Assertions.assertEquals(0, actual.size());
 
@@ -93,6 +109,7 @@ class HibernateTest {
         Query<Item> q = session.createNamedQuery("Item.findByName");
         q.setParameter("name", "MobileView Issue");
         q.setCacheable(mainQueryCacheable);
+        logger.debug("Item: searching isCacheable={}", isCacheable(q));
         List<Item> actual = q.getResultList();
         Assertions.assertNotNull(actual);
         Assertions.assertEquals(1, actual.size());
@@ -101,6 +118,60 @@ class HibernateTest {
 
         tx.commit();
         session.close();
+
+        timer.cancel();
+        timer.purge();
+    }
+
+    @ParameterizedTest
+    @MethodSource("testMobileViewIssueParameters")
+    void testMobileViewIssue_EntityManagerFactory(boolean mainQueryCacheable) {
+        Timer timer = new Timer();
+        timer.schedule(new TimerTask() {
+            @Override
+            public void run() {
+                EntityManager entityManager = entityManagerFactory.createEntityManager();
+                EntityTransaction et = entityManager.getTransaction();
+                et.begin();
+
+                javax.persistence.Query q = entityManager.createNamedQuery("Item.findByName");
+                q.setParameter("name", "MobileView Issue");
+                q.setHint(QueryHints.HINT_CACHEABLE, Boolean.TRUE);
+                List<Item> actual = (List<Item>) q.getResultList();
+                logger.debug("Search {}, isCacheable={}", actual, isCacheable(q));
+                Assertions.assertNotNull(actual);
+                Assertions.assertEquals(0, actual.size());
+
+                et.commit();
+            }
+        }, 0, 1000);
+
+        Awaitility.await().pollDelay(500, TimeUnit.MILLISECONDS).untilAsserted(() -> Assertions.assertTrue(true));
+
+        EntityManager entityManager = entityManagerFactory.createEntityManager();
+        EntityTransaction et = entityManager.getTransaction();
+        et.begin();
+
+        logger.debug("Item: creating");
+        Item expected = new Item("MobileView Issue");
+        entityManager.persist(expected);
+        entityManager.flush();
+        logger.debug("Item: created");
+
+        Awaitility.await().pollDelay(2000, TimeUnit.MILLISECONDS).untilAsserted(() -> Assertions.assertTrue(true));
+
+        logger.debug("Item: search");
+        javax.persistence.Query q = entityManager.createNamedQuery("Item.findByName");
+        q.setParameter("name", "MobileView Issue");
+        q.setHint(QueryHints.HINT_CACHEABLE, mainQueryCacheable);
+        logger.debug("Item: searching isCacheable={}", isCacheable(q));
+        List<Item> actual = (List<Item>) q.getResultList();
+        Assertions.assertNotNull(actual);
+        Assertions.assertEquals(1, actual.size());
+        Assertions.assertEquals(expected, actual.get(0));
+        logger.debug("Item: found {}", actual.get(0));
+
+        et.commit();
 
         timer.cancel();
         timer.purge();
