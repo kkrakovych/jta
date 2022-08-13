@@ -67,7 +67,7 @@ class HibernateTest {
 
     private boolean isCacheable(javax.persistence.Query q) {
         org.hibernate.Query<Item> hq = q.unwrap(org.hibernate.Query.class);
-        return hq.isCacheable();
+        return isCacheable(hq);
     }
 
     @ParameterizedTest
