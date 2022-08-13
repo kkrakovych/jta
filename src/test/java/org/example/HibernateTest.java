@@ -145,6 +145,7 @@ class HibernateTest {
                 Assertions.assertEquals(0, actual.size());
 
                 et.commit();
+                entityManager.close();
             }
         }, 0, 1000);
 
@@ -175,6 +176,7 @@ class HibernateTest {
         logger.debug("Item: found {}", actual.get(0));
 
         et.commit();
+        entityManager.close();
 
         timer.cancel();
         timer.purge();
